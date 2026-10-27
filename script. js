@@ -1,0 +1,1747 @@
+"use strict";
+
+/* =========================================================
+   FOOTBALL CAREER SIMULATOR
+   Realistic career progression, custom attributes,
+   match simulation, transfers, seasons, trophies and saves.
+   ========================================================= */
+
+const GAME_VERSION = 1;
+const SAVE_KEY = "phantomFootballCareer_v1";
+
+const STAT_NAMES = ["pac", "sho", "pas", "dri", "def", "phy"];
+
+const STAT_LABELS = {
+  pac: "PAC",
+  sho: "SHO",
+  pas: "PAS",
+  dri: "DRI",
+  def: "DEF",
+  phy: "PHY"
+};
+
+/* ---------------------------------------------------------
+   HELPERS
+   --------------------------------------------------------- */
+
+const $ = id => document.getElementById(id);
+
+function random(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function randomInt(min, max) {
+  return Math.floor(random(min, max + 1));
+}
+
+function pick(array) {
+  return array[Math.floor(Math.random() * array.length)];
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function round(value, decimals = 0) {
+  const multiplier = 10 ** decimals;
+  return Math.round(value * multiplier) / multiplier;
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString("en-NZ");
+}
+
+function formatMoney(value) {
+  value = Math.max(0, Number(value) || 0);
+
+  if (value >= 1_000_000_000) {
+    return "€" + round(value / 1_000_000_000, 2) + "B";
+  }
+
+  if (value >= 1_000_000) {
+    return "€" + round(value / 1_000_000, 1) + "M";
+  }
+
+  if (value >= 1_000) {
+    return "€" + round(value / 1_000, 0) + "K";
+  }
+
+  return "€" + Math.round(value);
+}
+
+function safeText(id, value) {
+  const element = $(id);
+  if (element) element.textContent = value ?? "";
+}
+
+function safeHTML(id, value) {
+  const element = $(id);
+  if (element) element.innerHTML = value;
+}
+
+function safeValue(id, value) {
+  const element = $(id);
+  if (element) element.value = value;
+}
+
+function safeBar(id, value) {
+  const element = $(id);
+  if (element) {
+    element.style.width = clamp(Number(value) || 0, 0, 100) + "%";
+  }
+}
+
+function safeShow(id, visible) {
+  const element = $(id);
+  if (element) element.hidden = !visible;
+}
+
+function escapeHTML(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
+
+/* ---------------------------------------------------------
+   POSITIONS AND OVR WEIGHTS
+
+   These weights are a game model, not official EA ratings.
+   --------------------------------------------------------- */
+
+const POSITION_WEIGHTS = {
+  GK:  { pac: 0.05, sho: 0.05, pas: 0.15, dri: 0.05, def: 0.35, phy: 0.35 },
+  CB:  { pac: 0.10, sho: 0.03, pas: 0.12, dri: 0.08, def: 0.42, phy: 0.23 },
+  LB:  { pac: 0.20, sho: 0.05, pas: 0.15, dri: 0.18, def: 0.27, phy: 0.13 },
+  RB:  { pac: 0.20, sho: 0.05, pas: 0.15, dri: 0.18, def: 0.27, phy: 0.13 },
+  CDM: { pac: 0.10, sho: 0.08, pas: 0.22, dri: 0.10, def: 0.30, phy: 0.23 },
+  CM:  { pac: 0.12, sho: 0.13, pas: 0.25, dri: 0.20, def: 0.15, phy: 0.18 },
+  CAM: { pac: 0.13, sho: 0.20, pas: 0.25, dri: 0.27, def: 0.05, phy: 0.08 },
+  LW:  { pac: 0.23, sho: 0.22, pas: 0.12, dri: 0.28, def: 0.03, phy: 0.10 },
+  RW:  { pac: 0.23, sho: 0.22, pas: 0.12, dri: 0.28, def: 0.03, phy: 0.10 },
+  ST:  { pac: 0.18, sho: 0.35, pas: 0.08, dri: 0.18, def: 0.02, phy: 0.17 }
+};
+
+const POSITION_NAMES = {
+  GK: "Goalkeeper",
+  CB: "Centre-back",
+  LB: "Left-back",
+  RB: "Right-back",
+  CDM: "Defensive midfielder",
+  CM: "Central midfielder",
+  CAM: "Attacking midfielder",
+  LW: "Left winger",
+  RW: "Right winger",
+  ST: "Striker"
+};
+
+function normalisePosition(position) {
+  const value = String(position || "ST").toUpperCase().trim();
+
+  const aliases = {
+    "GOALKEEPER": "GK",
+    "CENTRE BACK": "CB",
+    "CENTER BACK": "CB",
+    "LEFT BACK": "LB",
+    "RIGHT BACK": "RB",
+    "DEFENSIVE MIDFIELDER": "CDM",
+    "CENTRAL MIDFIELDER": "CM",
+    "ATTACKING MIDFIELDER": "CAM",
+    "LEFT WINGER": "LW",
+    "RIGHT WINGER": "RW",
+    "STRIKER": "ST"
+  };
+
+  const result = aliases[value] || value;
+  return POSITION_WEIGHTS[result] ? result : "ST";
+}
+
+function calculateOVR(stats, position) {
+  const weights = POSITION_WEIGHTS[normalisePosition(position)];
+
+  let total = 0;
+
+  for (const stat of STAT_NAMES) {
+    total += clamp(Number(stats[stat]) || 1, 1, 99) * weights[stat];
+  }
+
+  return clamp(Math.round(total), 1, 99);
+}
+
+function readCustomStats() {
+  const stats = {};
+
+  for (const stat of STAT_NAMES) {
+    const input = $(stat + "Input");
+    stats[stat] = clamp(
+      Number(input ? input.value : 70) || 1,
+      1,
+      99
+    );
+  }
+
+  return stats;
+}
+
+function updateCustomStatPreview() {
+  const stats = readCustomStats();
+
+  for (const stat of STAT_NAMES) {
+    safeText(stat + "Value", stats[stat]);
+  }
+
+  const position = normalisePosition(
+    $("position")?.value || "ST"
+  );
+
+  safeText("previewOVR", calculateOVR(stats, position));
+}
+
+/* ---------------------------------------------------------
+   COUNTRIES
+
+   This starter includes a broad selection. You can expand
+   the list without changing the career engine.
+   --------------------------------------------------------- */
+
+const COUNTRIES = [
+  { name: "Argentina", flag: "🇦🇷", rating: 88 },
+  { name: "Australia", flag: "🇦🇺", rating: 78 },
+  { name: "Austria", flag: "🇦🇹", rating: 79 },
+  { name: "Belgium", flag: "🇧🇪", rating: 86 },
+  { name: "Brazil", flag: "🇧🇷", rating: 92 },
+  { name: "Cameroon", flag: "🇨🇲", rating: 78 },
+  { name: "Canada", flag: "🇨🇦", rating: 78 },
+  { name: "Chile", flag: "🇨🇱", rating: 78 },
+  { name: "China", flag: "🇨🇳", rating: 66 },
+  { name: "Colombia", flag: "🇨🇴", rating: 83 },
+  { name: "Croatia", flag: "🇭🇷", rating: 85 },
+  { name: "Czechia", flag: "🇨🇿", rating: 79 },
+  { name: "Denmark", flag: "🇩🇰", rating: 82 },
+  { name: "Ecuador", flag: "🇪🇨", rating: 80 },
+  { name: "Egypt", flag: "🇪🇬", rating: 79 },
+  { name: "England", flag: "🏴", rating: 89 },
+  { name: "Finland", flag: "🇫🇮", rating: 73 },
+  { name: "France", flag: "🇫🇷", rating: 91 },
+  { name: "Germany", flag: "🇩🇪", rating: 88 },
+  { name: "Ghana", flag: "🇬🇭", rating: 77 },
+  { name: "Greece", flag: "🇬🇷", rating: 76 },
+  { name: "Hungary", flag: "🇭🇺", rating: 78 },
+  { name: "Iceland", flag: "🇮🇸", rating: 73 },
+  { name: "India", flag: "🇮🇳", rating: 62 },
+  { name: "Indonesia", flag: "🇮🇩", rating: 61 },
+  { name: "Iran", flag: "🇮🇷", rating: 78 },
+  { name: "Ireland", flag: "🇮🇪", rating: 76 },
+  { name: "Italy", flag: "🇮🇹", rating: 88 },
+  { name: "Ivory Coast", flag: "🇨🇮", rating: 79 },
+  { name: "Japan", flag: "🇯🇵", rating: 81 },
+  { name: "Mexico", flag: "🇲🇽", rating: 80 },
+  { name: "Morocco", flag: "🇲🇦", rating: 84 },
+  { name: "Netherlands", flag: "🇳🇱", rating: 87 },
+  { name: "New Zealand", flag: "🇳🇿", rating: 73 },
+  { name: "Nigeria", flag: "🇳🇬", rating: 80 },
+  { name: "Northern Ireland", flag: "🇬🇧", rating: 70 },
+  { name: "Norway", flag: "🇳🇴", rating: 82 },
+  { name: "Paraguay", flag: "🇵🇾", rating: 75 },
+  { name: "Peru", flag: "🇵🇪", rating: 74 },
+  { name: "Poland", flag: "🇵🇱", rating: 81 },
+  { name: "Portugal", flag: "🇵🇹", rating: 89 },
+  { name: "Qatar", flag: "🇶🇦", rating: 70 },
+  { name: "Romania", flag: "🇷🇴", rating: 75 },
+  { name: "Saudi Arabia", flag: "🇸🇦", rating: 73 },
+  { name: "Scotland", flag: "🏴", rating: 76 },
+  { name: "Senegal", flag: "🇸🇳", rating: 82 },
+  { name: "Serbia", flag: "🇷🇸", rating: 82 },
+  { name: "South Africa", flag: "🇿🇦", rating: 72 },
+  { name: "South Korea", flag: "🇰🇷", rating: 80 },
+  { name: "Spain", flag: "🇪🇸", rating: 90 },
+  { name: "Sweden", flag: "🇸🇪", rating: 79 },
+  { name: "Switzerland", flag: "🇨🇭", rating: 82 },
+  { name: "Tunisia", flag: "🇹🇳", rating: 75 },
+  { name: "Turkey", flag: "🇹🇷", rating: 81 },
+  { name: "Ukraine", flag: "🇺🇦", rating: 80 },
+  { name: "United States", flag: "🇺🇸", rating: 80 },
+  { name: "Uruguay", flag: "🇺🇾", rating: 85 },
+  { name: "Wales", flag: "🏴", rating: 76 }
+];
+
+function getCountry(name) {
+  return COUNTRIES.find(
+    country => country.name === name
+  ) || { name: name || "New Zealand", flag: "🌍", rating: 73 };
+}
+
+/* ---------------------------------------------------------
+   CLUB DATABASE
+
+   Ratings are approximate gameplay strengths, not live
+   league tables or official club ratings.
+   --------------------------------------------------------- */
+
+const CLUBS = [
+  { name: "Real Madrid", country: "Spain", league: "La Liga", rating: 91, prestige: 99, budget: 250000000, europe: true },
+  { name: "FC Barcelona", country: "Spain", league: "La Liga", rating: 90, prestige: 98, budget: 180000000, europe: true },
+  { name: "Manchester City", country: "England", league: "Premier League", rating: 91, prestige: 98, budget: 220000000, europe: true },
+  { name: "Liverpool", country: "England", league: "Premier League", rating: 89, prestige: 95, budget: 160000000, europe: true },
+  { name: "Arsenal", country: "England", league: "Premier League", rating: 88, prestige: 94, budget: 150000000, europe: true },
+  { name: "Manchester United", country: "England", league: "Premier League", rating: 86, prestige: 96, budget: 160000000, europe: true },
+  { name: "Chelsea", country: "England", league: "Premier League", rating: 85, prestige: 93, budget: 150000000, europe: true },
+  { name: "Tottenham Hotspur", country: "England", league: "Premier League", rating: 84, prestige: 89, budget: 100000000, europe: true },
+  { name: "Bayern Munich", country: "Germany", league: "Bundesliga", rating: 90, prestige: 97, budget: 170000000, europe: true },
+  { name: "Borussia Dortmund", country: "Germany", league: "Bundesliga", rating: 85, prestige: 90, budget: 90000000, europe: true },
+  { name: "Bayer Leverkusen", country: "Germany", league: "Bundesliga", rating: 86, prestige: 88, budget: 85000000, europe: true },
+  { name: "Paris Saint-Germain", country: "France", league: "Ligue 1", rating: 89, prestige: 96, budget: 200000000, europe: true },
+  { name: "Marseille", country: "France", league: "Ligue 1", rating: 81, prestige: 86, budget: 55000000, europe: true },
+  { name: "Inter Milan", country: "Italy", league: "Serie A", rating: 88, prestige: 94, budget: 100000000, europe: true },
+  { name: "AC Milan", country: "Italy", league: "Serie A", rating: 85, prestige: 95, budget: 95000000, europe: true },
+  { name: "Juventus", country: "Italy", league: "Serie A", rating: 85, prestige: 96, budget: 100000000, europe: true },
+  { name: "Napoli", country: "Italy", league: "Serie A", rating: 84, prestige: 87, budget: 80000000, europe: true },
+  { name: "Atletico Madrid", country: "Spain", league: "La Liga", rating: 87, prestige: 93, budget: 100000000, europe: true },
+  { name: "Sevilla", country: "Spain", league: "La Liga", rating: 81, prestige: 87, budget: 55000000, europe: true },
+  { name: "Ajax", country: "Netherlands", league: "Eredivisie", rating: 82, prestige: 89, budget: 50000000, europe: true },
+  { name: "PSV Eindhoven", country: "Netherlands", league: "Eredivisie", rating: 83, prestige: 86, budget: 45000000, europe: true },
+  { name: "Benfica", country: "Portugal", league: "Primeira Liga", rating: 83, prestige: 89, budget: 60000000, europe: true },
+  { name: "Porto", country: "Portugal", league: "Primeira Liga", rating: 82, prestige: 89, budget: 55000000, europe: true },
+  { name: "Sporting CP", country: "Portugal", league: "Primeira Liga", rating: 82, prestige: 86, budget: 50000000, europe: true },
+  { name: "Celtic", country: "Scotland", league: "Scottish Premiership", rating: 79, prestige: 85, budget: 30000000, europe: true },
+  { name: "Rangers", country: "Scotland", league: "Scottish Premiership", rating: 78, prestige: 83, budget: 28000000, europe: true },
+  { name: "Galatasaray", country: "Turkey", league: "Super Lig", rating: 81, prestige: 86, budget: 45000000, europe: true },
+  { name: "Fenerbahce", country: "Turkey", league: "Super Lig", rating: 80, prestige: 85, budget: 40000000, europe: true },
+  { name: "Al-Hilal", country: "Saudi Arabia", league: "Saudi Pro League", rating: 84, prestige: 86, budget: 150000000, europe: false },
+  { name: "Al-Nassr", country: "Saudi Arabia", league: "Saudi Pro League", rating: 82, prestige: 86, budget: 130000000, europe: false },
+  { name: "Inter Miami", country: "United States", league: "MLS", rating: 77, prestige: 84, budget: 65000000, europe: false },
+  { name: "LA Galaxy", country: "United States", league: "MLS", rating: 75, prestige: 82, budget: 40000000, europe: false },
+  { name: "Flamengo", country: "Brazil", league: "Brasileirao", rating: 83, prestige: 88, budget: 75000000, europe: false },
+  { name: "Palmeiras", country: "Brazil", league: "Brasileirao", rating: 82, prestige: 86, budget: 65000000, europe: false },
+  { name: "Santos", country: "Brazil", league: "Brasileirao", rating: 76, prestige: 88, budget: 30000000, europe: false },
+  { name: "Boca Juniors", country: "Argentina", league: "Argentine Primera", rating: 79, prestige: 89, budget: 35000000, europe: false },
+  { name: "River Plate", country: "Argentina", league: "Argentine Primera", rating: 81, prestige: 89, budget: 40000000, europe: false },
+  { name: "Auckland FC", country: "New Zealand", league: "A-League", rating: 69, prestige: 65, budget: 5000000, europe: false },
+  { name: "Wellington Phoenix", country: "New Zealand", league: "A-League", rating: 68, prestige: 66, budget: 4000000, europe: false },
+  { name: "Auckland City", country: "New Zealand", league: "New Zealand National League", rating: 58, prestige: 56, budget: 1000000, europe: false },
+  { name: "Sydney FC", country: "Australia", league: "A-League", rating: 70, prestige: 72, budget: 7000000, europe: false },
+  { name: "Melbourne Victory", country: "Australia", league: "A-League", rating: 70, prestige: 73, budget: 7000000, europe: false },
+  { name: "Urawa Red Diamonds", country: "Japan", league: "J1 League", rating: 74, prestige: 78, budget: 15000000, europe: false },
+  { name: "Al Ahly", country: "Egypt", league: "Egyptian Premier League", rating: 78, prestige: 84, budget: 20000000, europe: false }
+];
+
+/* ---------------------------------------------------------
+   GAME STATE
+   --------------------------------------------------------- */
+
+let player = null;
+let currentClub = null;
+let currentYear = new Date().getFullYear();
+let currentSeason = currentYear;
+let seasonFinished = false;
+let retirement = false;
+let lastMatch = null;
+let offerList = [];
+
+function createEmptyStats() {
+  return {
+    matches: 0,
+    starts: 0,
+    substituteAppearances: 0,
+    goals: 0,
+    assists: 0,
+    yellowCards: 0,
+    redCards: 0,
+    minutes: 0,
+    averageRating: 0,
+    cleanSheets: 0
+  };
+}
+
+function createPlayerObject(data) {
+  const stats = {};
+
+  for (const stat of STAT_NAMES) {
+    stats[stat] = clamp(Number(data.stats?.[stat]) || 50, 1, 99);
+  }
+
+  const position = normalisePosition(data.position);
+
+  const age = clamp(Number(data.age) || 18, 15, 45);
+
+  return {
+    name: String(data.name || "New Player").trim().slice(0, 40),
+    nationality: data.nationality || "New Zealand",
+    age,
+    birthYear: currentYear - age,
+    height: clamp(Number(data.height) || 180, 140, 220),
+    foot: data.foot || "Right",
+    position,
+    number: clamp(Number(data.number) || 10, 1, 99),
+
+    stats,
+    ovr: calculateOVR(stats, position),
+    potential: clamp(
+      Number(data.potential) || calculateOVR(stats, position) + randomInt(4, 12),
+      calculateOVR(stats, position),
+      99
+    ),
+
+    fitness: 95,
+    form: 0,
+    morale: 75,
+    sharpness: 65,
+    injuryDays: 0,
+    suspendedMatches: 0,
+
+    reputation: 5,
+    loyalty: 50,
+    marketValue: 50000,
+    salary: 1000,
+    cash: 0,
+    contractYears: 2,
+
+    preferredClub: data.preferredClub || null,
+    appearancesForCountry: 0,
+    internationalGoals: 0,
+    internationalAssists: 0,
+    nationalTeamSelected: false,
+
+    season: createEmptyStats(),
+    career: createEmptyStats(),
+    seasonTrophies: [],
+    trophies: [],
+    awards: [],
+    clubHistory: [],
+    news: [],
+    matchHistory: [],
+
+    seasonStarts: 0,
+    seasonsPlayed: 0,
+    lastSeasonOVR: calculateOVR(stats, position),
+    retired: false,
+    createdAt: currentYear
+  };
+}
+
+function calculatePotential(age, ovr) {
+  let bonus;
+
+  if (age <= 18) bonus = randomInt(10, 20);
+  else if (age <= 21) bonus = randomInt(7, 16);
+  else if (age <= 24) bonus = randomInt(4, 12);
+  else if (age <= 28) bonus = randomInt(1, 8);
+  else bonus = randomInt(0, 4);
+
+  return clamp(ovr + bonus, ovr, 99);
+}
+
+/* ---------------------------------------------------------
+   INITIALISATION
+   --------------------------------------------------------- */
+
+function initGame() {
+  connectCustomStats();
+  updateCustomStatPreview();
+
+  const positionInput = $("position");
+  if (positionInput) {
+    positionInput.addEventListener("change", updateCustomStatPreview);
+  }
+
+  const ageInput = $("age");
+  if (ageInput) {
+    ageInput.addEventListener("input", () => {
+      const ageLabel = $("ageValue");
+      if (ageLabel) ageLabel.textContent = ageInput.value;
+    });
+  }
+
+  $("createBtn")?.addEventListener("click", createCareer);
+  $("playMatchBtn")?.addEventListener("click", playMatch);
+  $("trainBtn")?.addEventListener("click", trainPlayer);
+  $("restBtn")?.addEventListener("click", restPlayer);
+  $("nextSeasonBtn")?.addEventListener("click", advanceSeason);
+  $("saveBtn")?.addEventListener("click", saveCareer);
+  $("loadBtn")?.addEventListener("click", loadCareer);
+
+  addNews("Welcome to your football career. Build your reputation one season at a time.");
+  renderAll();
+
+  safeShow("createScreen", true);
+  safeShow("careerScreen", false);
+  safeShow("retirementPanel", false);
+}
+
+function connectCustomStats() {
+  for (const stat of STAT_NAMES) {
+    const input = $(stat + "Input");
+    if (input) {
+      input.min = 1;
+      input.max = 99;
+      input.addEventListener("input", updateCustomStatPreview);
+    }
+  }
+}
+
+/* ---------------------------------------------------------
+   PLAYER CREATION
+   --------------------------------------------------------- */
+
+function createCareer() {
+  const name = $("name")?.value?.trim() || "The Phantom";
+
+  const nationality = $("nationality")?.value || "New Zealand";
+  const position = normalisePosition($("position")?.value || "LW");
+  const foot = $("foot")?.value || "Right";
+  const age = clamp(Number($("age")?.value) || 18, 15, 45);
+  const height = clamp(Number($("height")?.value) || 180, 140, 220);
+  const number = clamp(Number($("number")?.value) || 10, 1, 99);
+
+  const stats = readCustomStats();
+  const ovr = calculateOVR(stats, position);
+
+  player = createPlayerObject({
+    name,
+    nationality,
+    position,
+    foot,
+    age,
+    height,
+    number,
+    stats,
+    potential: calculatePotential(age, ovr)
+  });
+
+  currentYear = new Date().getFullYear();
+  currentSeason = currentYear;
+  seasonFinished = false;
+  retirement = false;
+
+  currentClub = chooseStartingClub(player.ovr, player.nationality);
+  player.salary = calculateSalary(player.ovr, currentClub);
+  player.marketValue = calculateMarketValue(player);
+  player.contractYears = randomInt(2, 4);
+
+  player.clubHistory.push({
+    club: currentClub.name,
+    startYear: currentYear,
+    endYear: null,
+    appearances: 0,
+    goals: 0,
+    assists: 0,
+    trophies: []
+  });
+
+  addNews(
+    `${player.name} begins a professional career at ${currentClub.name}.`
+  );
+
+  safeShow("createScreen", false);
+  safeShow("careerScreen", true);
+
+  renderAll();
+  saveCareer(false);
+}
+
+function chooseStartingClub(ovr, nationality) {
+  let suitable = CLUBS.filter(club => club.rating <= ovr + 10);
+
+  if (ovr < 65) {
+    suitable = suitable.filter(club => club.rating <= 75);
+  } else if (ovr < 75) {
+    suitable = suitable.filter(club => club.rating <= 85);
+  }
+
+  if (!suitable.length) suitable = CLUBS;
+
+  const preferred = player?.preferredClub;
+  if (preferred) {
+    const club = CLUBS.find(item => item.name === preferred);
+    if (club && club.rating <= ovr + 15) return club;
+  }
+
+  const localClubs = suitable.filter(
+    club => club.country === nationality
+  );
+
+  if (localClubs.length && Math.random() < 0.35) {
+    return pick(localClubs);
+  }
+
+  const lowerBound = Math.max(50, ovr - 20);
+  const candidates = suitable.filter(
+    club => club.rating >= lowerBound
+  );
+
+  return pick(candidates.length ? candidates : suitable);
+}
+
+/* ---------------------------------------------------------
+   VALUE, WAGES AND CONTRACTS
+   --------------------------------------------------------- */
+
+function calculateMarketValue(p) {
+  if (!p) return 0;
+
+  const ovr = p.ovr;
+  const ageFactor = p.age < 21 ? 1.3 :
+                    p.age < 25 ? 1.5 :
+                    p.age < 29 ? 1.2 :
+                    p.age < 32 ? 0.75 : 0.35;
+
+  const potentialFactor = 1 + Math.max(0, p.potential - ovr) * 0.035;
+  const reputationFactor = 0.7 + p.reputation / 20;
+  const performanceFactor = 1 + clamp(p.season.goals * 0.008, 0, 0.5)
+                              + clamp(p.season.assists * 0.005, 0, 0.3);
+
+  const base = Math.max(5000, (ovr ** 3) * 15);
+
+  return Math.round(
+    base * ageFactor * potentialFactor *
+    reputationFactor * performanceFactor
+  );
+}
+
+function calculateSalary(ovr, club) {
+  const clubFactor = Math.max(0.35, club.rating / 85);
+  return Math.round((ovr ** 3) * 0.2 * clubFactor);
+}
+
+function updateFinancials() {
+  if (!player || !currentClub) return;
+
+  player.marketValue = calculateMarketValue(player);
+  player.salary = calculateSalary(player.ovr, currentClub);
+}
+
+/* ---------------------------------------------------------
+   PLAYER EFFECTIVE ABILITY
+   --------------------------------------------------------- */
+
+function effectiveStat(stat) {
+  if (!player) return 50;
+
+  const raw = player.stats[stat] || 50;
+  const fitnessFactor = 0.70 + player.fitness / 333;
+  const sharpnessFactor = 0.85 + player.sharpness / 500;
+  const formFactor = 1 + clamp(player.form, -10, 10) * 0.008;
+
+  let ageFactor = 1;
+
+  if (player.age >= 34 && ["pac", "phy"].includes(stat)) {
+    ageFactor -= (player.age - 33) * 0.012;
+  }
+
+  return clamp(
+    raw * fitnessFactor * sharpnessFactor * formFactor * ageFactor,
+    1,
+    99
+  );
+}
+
+function effectiveOVR() {
+  const stats = {};
+
+  for (const stat of STAT_NAMES) {
+    stats[stat] = effectiveStat(stat);
+  }
+
+  return calculateOVR(stats, player.position);
+}
+
+/* ---------------------------------------------------------
+   MATCH ENGINE
+   --------------------------------------------------------- */
+
+function playerRoleMultiplier(position) {
+  if (["ST", "LW", "RW", "CAM"].includes(position)) return 1.1;
+  if (["CM", "CDM"].includes(position)) return 0.8;
+  if (["LB", "RB", "CB"].includes(position)) return 0.45;
+  if (position === "GK") return 0.05;
+  return 0.7;
+}
+
+function expectedGoals(teamRating, opponentRating, home = false) {
+  const difference = teamRating - opponentRating + (home ? 3 : 0);
+  return clamp(1.35 + difference * 0.035, 0.25, 3.2);
+}
+
+function poissonSample(lambda) {
+  const limit = Math.exp(-lambda);
+  let product = 1;
+  let count = 0;
+
+  do {
+    count++;
+    product *= Math.random();
+  } while (product > limit && count < 12);
+
+  return count - 1;
+}
+
+function playMatch() {
+  if (!player || !currentClub || player.retired) {
+    notify("Create or load a career first.");
+    return;
+  }
+
+  if (seasonFinished) {
+    notify("This season has finished. Advance to the next season first.");
+    return;
+  }
+
+  if (player.injuryDays > 0) {
+    notify(`You are injured for another ${player.injuryDays} day(s). Rest to recover.`);
+    return;
+  }
+
+  if (player.suspendedMatches > 0) {
+    player.suspendedMatches--;
+    notify("You are suspended for this match.");
+    return;
+  }
+
+  const opponent = chooseOpponent(currentClub);
+  const isHome = Math.random() < 0.5;
+  const homeName = isHome ? currentClub.name : opponent.name;
+  const awayName = isHome ? opponent.name : currentClub.name;
+
+  const playerOVR = effectiveOVR();
+  const startChance = clamp(
+    0.35 + (playerOVR - currentClub.rating + 10) * 0.035
+      + player.sharpness / 300,
+    0.08,
+    0.97
+  );
+
+  const starts = Math.random() < startChance;
+  const minutes = starts ? randomInt(65, 90) :
+                  Math.random() < 0.55 ? randomInt(10, 35) : 0;
+
+  const homeRating = isHome ? currentClub.rating : opponent.rating;
+  const awayRating = isHome ? opponent.rating : currentClub.rating;
+
+  let homeXG = expectedGoals(homeRating, awayRating, true);
+  let awayXG = expectedGoals(awayRating, homeRating, false);
+
+  if (minutes === 0) {
+    homeXG *= 0.95;
+    awayXG *= 0.95;
+  }
+
+  let homeGoals = poissonSample(homeXG);
+  let awayGoals = poissonSample(awayXG);
+
+  let goals = 0;
+  let assists = 0;
+  let rating = minutes === 0 ? 5.8 : random(5.8, 7.0);
+
+  if (minutes > 0) {
+    const role = playerRoleMultiplier(player.position);
+    const attack = (
+      effectiveStat("sho") * 0.36 +
+      effectiveStat("pac") * 0.18 +
+      effectiveStat("dri") * 0.20 +
+      effectiveStat("pas") * 0.14 +
+      effectiveStat("phy") * 0.12
+    ) / 100;
+
+    const opportunityRate = minutes / 90;
+    const clubFactor = clamp(
+      0.7 + (currentClub.rating - opponent.rating) * 0.018,
+      0.45,
+      1.4
+    );
+
+    let goalChance = role * attack * opportunityRate * clubFactor * 0.6;
+    goalChance *= player.form >= 4 ? 1.15 : 1;
+    goalChance *= player.morale >= 80 ? 1.05 : 1;
+    goalChance *= player.fitness / 100;
+
+    goals = 0;
+    for (let i = 0; i < 4; i++) {
+      if (Math.random() < goalChance * 0.32) goals++;
+    }
+
+    const playmakerFactor = effectiveStat("pas") / 100;
+    const assistChance = (minutes / 90) * role *
+      (0.08 + playmakerFactor * 0.18) * clubFactor;
+
+    assists = 0;
+    for (let i = 0; i < 3; i++) {
+      if (Math.random() < assistChance) assists++;
+    }
+
+    if (goals > 0) {
+      if (isHome) homeGoals += goals;
+      else awayGoals += goals;
+    }
+
+    if (starts) player.season.starts++;
+    else player.season.substituteAppearances++;
+
+    rating = clamp(
+      6.0 + goals * 1.25 + assists * 0.75 +
+      random(-0.8, 0.9) +
+      (starts ? 0.2 : 0),
+      4.5,
+      10
+    );
+
+    player.fitness = clamp(
+      player.fitness - (starts ? randomInt(9, 16) : randomInt(3, 8)),
+      15,
+      100
+    );
+
+    player.sharpness = clamp(player.sharpness + 3, 0, 100);
+  } else {
+    player.fitness = clamp(player.fitness - randomInt(1, 3), 15, 100);
+  }
+
+  const won = (
+    (isHome && homeGoals > awayGoals) ||
+    (!isHome && awayGoals > homeGoals)
+  );
+
+  const draw = homeGoals === awayGoals;
+
+  if (minutes > 0) {
+    player.season.matches++;
+    player.career.matches++;
+    player.season.goals += goals;
+    player.career.goals += goals;
+    player.season.assists += assists;
+    player.career.assists += assists;
+    player.season.minutes += minutes;
+    player.career.minutes += minutes;
+
+    player.season.averageRating = updateAverage(
+      player.season.averageRating,
+      rating,
+      player.season.matches
+    );
+
+    player.career.averageRating = updateAverage(
+      player.career.averageRating,
+      rating,
+      player.career.matches
+    );
+
+    player.form = clamp(
+      player.form + (rating >= 7 ? 1 : rating < 6 ? -1 : 0),
+      -10,
+      10
+    );
+
+    if (won) {
+      player.morale = clamp(player.morale + 3, 0, 100);
+    } else if (!draw) {
+      player.morale = clamp(player.morale - 2, 0, 100);
+    }
+
+    const yellow = Math.random() < 0.12;
+    if (yellow) {
+      player.season.yellowCards++;
+      player.career.yellowCards++;
+    }
+
+    if (Math.random() < 0.012) {
+      player.injuryDays = randomInt(3, 28);
+      addNews(`${player.name} picked up an injury and will need recovery time.`);
+    }
+
+    player.reputation = clamp(
+      player.reputation + (rating >= 8.5 ? 1 : rating >= 7.5 ? 0.3 : 0),
+      0,
+      100
+    );
+  }
+
+  player.cash += player.salary / 4;
+  updateFinancials();
+
+  const result = {
+    year: currentYear,
+    club: currentClub.name,
+    opponent: opponent.name,
+    home: isHome,
+    homeName,
+    awayName,
+    homeGoals,
+    awayGoals,
+    goals,
+    assists,
+    rating: round(rating, 1),
+    minutes,
+    starts,
+    won,
+    draw,
+    date: new Date().toISOString()
+  };
+
+  lastMatch = result;
+  player.matchHistory.unshift(result);
+  player.matchHistory = player.matchHistory.slice(0, 30);
+
+  addNews(
+    minutes > 0
+      ? `${player.name} played ${minutes} minutes against ${opponent.name}, rating ${round(rating, 1)}.`
+      : `${player.name} did not get on the pitch against ${opponent.name}.`
+  );
+
+  renderAll();
+  saveCareer(false);
+}
+
+function updateAverage(previous, newRating, count) {
+  if (count <= 1) return newRating;
+  return ((previous * (count - 1)) + newRating) / count;
+}
+
+function chooseOpponent(club) {
+  let opponents = CLUBS.filter(item =>
+    item.name !== club.name &&
+    item.league === club.league
+  );
+
+  if (!opponents.length) {
+    opponents = CLUBS.filter(item => item.name !== club.name);
+  }
+
+  const close = opponents.filter(item =>
+    Math.abs(item.rating - club.rating) <= 8
+  );
+
+  return pick(close.length ? close : opponents);
+}
+
+/* ---------------------------------------------------------
+   TRAINING AND RECOVERY
+   --------------------------------------------------------- */
+
+function trainPlayer() {
+  if (!player || player.retired) {
+    notify("Create or load a career first.");
+    return;
+  }
+
+  if (player.injuryDays > 0) {
+    notify("Recover from your injury before training.");
+    return;
+  }
+
+  if (player.fitness < 35) {
+    notify("Your fitness is too low for intense training. Rest first.");
+    return;
+  }
+
+  const stat = chooseTrainingStat();
+  const age = player.age;
+  const potentialGap = player.potential - player.stats[stat];
+
+  let improvement = 0;
+
+  if (potentialGap > 0) {
+    const ageFactor = age <= 21 ? 1.4 :
+                      age <= 25 ? 1 :
+                      age <= 29 ? 0.55 : 0.2;
+
+    improvement = random(0.15, 0.65) * ageFactor;
+    improvement *= player.morale > 70 ? 1.1 : 0.9;
+    improvement = Math.min(improvement, potentialGap);
+  }
+
+  player.stats[stat] = round(
+    clamp(player.stats[stat] + improvement, 1, 99),
+    1
+  );
+
+  player.fitness = clamp(player.fitness - randomInt(7, 13), 15, 100);
+  player.sharpness = clamp(player.sharpness + randomInt(4, 8), 0, 100);
+  player.morale = clamp(player.morale + 1, 0, 100);
+
+  player.ovr = calculateOVR(player.stats, player.position);
+  updateFinancials();
+
+  addNews(
+    `Training complete: ${STAT_LABELS[stat]} ${improvement > 0 ? "+" + round(improvement, 1) : "maintained"}.`
+  );
+
+  renderAll();
+  saveCareer(false);
+}
+
+function chooseTrainingStat() {
+  const weights = POSITION_WEIGHTS[player.position];
+  const entries = STAT_NAMES.map(stat => ({
+    stat,
+    weight: Math.max(0.05, weights[stat])
+  }));
+
+  let total = entries.reduce((sum, item) => sum + item.weight, 0);
+  let roll = Math.random() * total;
+
+  for (const item of entries) {
+    roll -= item.weight;
+    if (roll <= 0) return item.stat;
+  }
+
+  return "pac";
+}
+
+function restPlayer() {
+  if (!player || player.retired) {
+    notify("Create or load a career first.");
+    return;
+  }
+
+  player.fitness = clamp(player.fitness + randomInt(18, 30), 0, 100);
+  player.sharpness = clamp(player.sharpness - 1, 0, 100);
+  player.morale = clamp(player.morale + 2, 0, 100);
+
+  if (player.injuryDays > 0) {
+    player.injuryDays = Math.max(0, player.injuryDays - randomInt(3, 7));
+
+    if (player.injuryDays === 0) {
+      addNews(`${player.name} has recovered from their injury.`);
+    }
+  }
+
+  addNews(`${player.name} took a recovery day.`);
+  renderAll();
+  saveCareer(false);
+}
+
+/* ---------------------------------------------------------
+   SEASON PROGRESSION
+   --------------------------------------------------------- */
+
+function advanceSeason() {
+  if (!player || player.retired) {
+    notify("Create or load a career first.");
+    return;
+  }
+
+  const confirmation = player.season.matches === 0
+    ? true
+    : confirm("Finish this season and advance to the next year?");
+
+  if (!confirmation) return;
+
+  finishSeason();
+
+  if (player.age >= 40) {
+    player.retired = true;
+    retirement = true;
+    safeShow("retirementPanel", true);
+    addNews(`${player.name} has retired from professional football.`);
+    renderAll();
+    saveCareer(false);
+    return;
+  }
+
+  currentYear++;
+  currentSeason = currentYear;
+  player.age++;
+  player.seasonsPlayed++;
+  seasonFinished = false;
+
+  player.season = createEmptyStats();
+  player.seasonTrophies = [];
+  player.seasonStarts = 0;
+
+  player.fitness = clamp(player.fitness + 25, 50, 100);
+  player.sharpness = 55;
+  player.form = Math.round(player.form * 0.4);
+  player.morale = clamp(player.morale + randomInt(-5, 8), 25, 100);
+  player.contractYears = Math.max(0, player.contractYears - 1);
+
+  developAtSeasonEnd();
+  updateFinancials();
+
+  if (player.injuryDays > 0) {
+    player.injuryDays = Math.max(0, player.injuryDays - 30);
+  }
+
+  if (player.contractYears === 0) {
+    player.contractYears = randomInt(2, 4);
+    addNews(`${player.name} signed a renewed contract with ${currentClub.name}.`);
+  }
+
+  if (currentYear % 4 === 2) {
+    simulateWorldCup();
+  }
+
+  generateTransferOffers();
+  maybeGiveSeasonAward();
+
+  addNews(`The ${currentYear} season begins.`);
+  renderAll();
+  saveCareer(false);
+}
+
+function finishSeason() {
+  if (!player || seasonFinished) return;
+
+  seasonFinished = true;
+
+  const clubPerformance = currentClub.rating;
+  const playerPerformance = player.ovr;
+
+  // Domestic league title probability depends on club strength.
+  const titleChance = clamp(
+    0.08 + (clubPerformance - 65) * 0.012 +
+    (playerPerformance - clubPerformance) * 0.006,
+    0.02,
+    0.72
+  );
+
+  if (Math.random() < titleChance) {
+    awardTrophy(`${currentClub.league} title`, currentYear);
+  }
+
+  if (Math.random() < titleChance * 0.4) {
+    awardTrophy("Domestic Cup", currentYear);
+  }
+
+  if (currentClub.europe && currentClub.rating >= 82 &&
+      Math.random() < clamp((currentClub.rating - 76) * 0.025, 0.05, 0.45)) {
+    awardTrophy("European Competition", currentYear);
+  }
+
+  const goals = player.season.goals;
+  const assists = player.season.assists;
+  const appearances = player.season.matches;
+
+  if (appearances >= 10 && goals >= 15) {
+    awardAward("Golden Boot", currentYear);
+  }
+
+  if (appearances >= 10 && assists >= 12) {
+    awardAward("Playmaker of the Season", currentYear);
+  }
+
+  if (appearances >= 15 && player.season.averageRating >= 7.6) {
+    awardAward("Team of the Season", currentYear);
+  }
+
+  if (player.ovr >= 90 && player.reputation >= 70 &&
+      appearances >= 20 && Math.random() < 0.5) {
+    awardAward("Ballon d'Or", currentYear);
+  }
+
+  const history = player.clubHistory[player.clubHistory.length - 1];
+
+  if (history) {
+    history.appearances += appearances;
+    history.goals += goals;
+    history.assists += assists;
+    history.endYear = currentYear;
+    history.trophies.push(...player.seasonTrophies);
+  }
+
+  player.cash += player.salary * 2;
+  player.lastSeasonOVR = player.ovr;
+
+  addNews(
+    `${currentYear} season finished: ${goals} goals and ${assists} assists in ${appearances} appearances.`
+  );
+}
+
+function developAtSeasonEnd() {
+  for (const stat of STAT_NAMES) {
+    const current = player.stats[stat];
+    const potentialGap = player.potential - current;
+
+    if (potentialGap <= 0) continue;
+
+    let change = 0;
+
+    if (player.age <= 20) change = random(0.3, 1.5);
+    else if (player.age <= 24) change = random(0.2, 1.0);
+    else if (player.age <= 28) change = random(0.0, 0.5);
+    else if (player.age <= 32) change = random(-0.2, 0.25);
+    else change = random(-1.2, 0.0);
+
+    if (player.fitness < 50) change -= 0.2;
+    if (player.morale > 80 && change > 0) change += 0.1;
+
+    player.stats[stat] = round(
+      clamp(current + change, 1, 99),
+      1
+    );
+  }
+
+  if (player.age >= 30) {
+    player.stats.pac = round(
+      clamp(player.stats.pac - random(0, 0.8), 1, 99),
+      1
+    );
+    player.stats.phy = round(
+      clamp(player.stats.phy - random(0, 0.6), 1, 99),
+      1
+    );
+  }
+
+  player.ovr = calculateOVR(player.stats, player.position);
+}
+
+/* ---------------------------------------------------------
+   TROPHIES AND AWARDS
+   --------------------------------------------------------- */
+
+function awardTrophy(name, year) {
+  const trophy = { name, year, club: currentClub.name };
+
+  player.trophies.push(trophy);
+  player.seasonTrophies.push(trophy);
+
+  addNews(`${currentClub.name} won the ${name}!`);
+}
+
+function awardAward(name, year) {
+  player.awards.push({
+    name,
+    year,
+    club: currentClub.name
+  });
+
+  addNews(`${player.name} won ${name}!`);
+}
+
+function maybeGiveSeasonAward() {
+  if (
+    player.ovr >= 92 &&
+    player.reputation >= 80 &&
+    player.season.matches >= 20 &&
+    player.season.averageRating >= 7.7 &&
+    Math.random() < 0.35
+  ) {
+    awardAward("World Player of the Year", currentYear);
+  }
+}
+
+/* ---------------------------------------------------------
+   INTERNATIONAL FOOTBALL
+
+   Simplified international simulation. It is not an official
+   real-world tournament schedule.
+   --------------------------------------------------------- */
+
+function simulateWorldCup() {
+  const country = getCountry(player.nationality);
+
+  const selectionChance = clamp(
+    0.12 + (player.ovr - country.rating) * 0.035 +
+    player.reputation * 0.004,
+    0.02,
+    0.98
+  );
+
+  if (Math.random() > selectionChance) {
+    addNews(
+      `${player.nationality} did not select ${player.name} for this World Cup.`
+    );
+    return;
+  }
+
+  player.nationalTeamSelected = true;
+  player.appearancesForCountry += randomInt(3, 7);
+
+  const attackAbility = (
+    player.stats.sho + player.stats.pas + player.stats.dri
+  ) / 3;
+
+  const internationalGoals = Math.random() < attackAbility / 100
+    ? randomInt(0, 4)
+    : randomInt(0, 1);
+
+  player.internationalGoals += internationalGoals;
+  player.internationalAssists += randomInt(0, 2);
+
+  const strength = country.rating + (player.ovr - 75) * 0.15;
+  const championChance = clamp((strength - 55) * 0.0012, 0.005, 0.13);
+
+  if (Math.random() < championChance) {
+    awardInternationalTrophy("FIFA World Cup");
+    awardAward("World Cup Winner", currentYear);
+    addNews(`${player.nationality} won the World Cup!`);
+  } else {
+    addNews(
+      `${player.name} represented ${player.nationality} at the World Cup.`
+    );
+  }
+}
+
+function awardInternationalTrophy(name) {
+  player.trophies.push({
+    name,
+    year: currentYear,
+    club: player.nationality
+  });
+}
+
+/* ---------------------------------------------------------
+   TRANSFERS
+   --------------------------------------------------------- */
+
+function generateTransferOffers() {
+  offerList = [];
+
+  const value = player.marketValue;
+  const reputation = player.reputation;
+
+  const suitable = CLUBS.filter(club => {
+    if (club.name === currentClub.name) return false;
+
+    const ratingLimit = player.ovr + (reputation > 50 ? 8 : 3);
+    const canAfford = club.budget >= value * 0.6;
+
+    return club.rating <= ratingLimit && canAfford;
+  });
+
+  const sorted = suitable.sort((a, b) => {
+    const scoreA = a.rating + a.prestige * 0.15;
+    const scoreB = b.rating + b.prestige * 0.15;
+    return scoreB - scoreA;
+  });
+
+  const choices = sorted.slice(0, 12);
+
+  while (offerList.length < 3 && choices.length) {
+    const club = choices.splice(randomInt(0, choices.length - 1), 1)[0];
+
+    offerList.push({
+      club,
+      fee: Math.round(value * random(0.8, 1.35)),
+      salary: calculateSalary(player.ovr, club),
+      contractYears: randomInt(2, 5)
+    });
+  }
+}
+
+function acceptTransfer(index) {
+  if (!player || player.retired) return;
+
+  const offer = offerList[index];
+  if (!offer) {
+    notify("That transfer offer is no longer available.");
+    return;
+  }
+
+  const oldClub = currentClub;
+  const oldHistory = player.clubHistory[player.clubHistory.length - 1];
+
+  if (oldHistory) oldHistory.endYear = currentYear;
+
+  currentClub = offer.club;
+  player.cash += offer.fee * 0.02;
+  player.salary = offer.salary;
+  player.contractYears = offer.contractYears;
+  player.loyalty = 50;
+
+  player.clubHistory.push({
+    club: currentClub.name,
+    startYear: currentYear,
+    endYear: null,
+    appearances: 0,
+    goals: 0,
+    assists: 0,
+    trophies: []
+  });
+
+  offerList = [];
+
+  addNews(
+    `${player.name} transferred from ${oldClub.name} to ${currentClub.name} for ${formatMoney(offer.fee)}.`
+  );
+
+  renderAll();
+  saveCareer(false);
+}
+
+/* ---------------------------------------------------------
+   NEWS AND NOTIFICATIONS
+   --------------------------------------------------------- */
+
+function addNews(message) {
+  if (!player) {
+    console.log(message);
+    return;
+  }
+
+  player.news.unshift({
+    year: currentYear,
+    message: String(message),
+    date: new Date().toISOString()
+  });
+
+  player.news = player.news.slice(0, 60);
+}
+
+function notify(message) {
+  // Uses a simple browser alert so the engine works without
+  // requiring an extra notification element in the HTML.
+  window.alert(message);
+}
+
+/* ---------------------------------------------------------
+   UI RENDERING
+   --------------------------------------------------------- */
+
+function renderAll() {
+  if (!player || !currentClub) return;
+
+  player.ovr = calculateOVR(player.stats, player.position);
+  updateFinancials();
+
+  renderProfile();
+  renderAttributes();
+  renderCondition();
+  renderSeasonStats();
+  renderCareerStats();
+  renderLatestMatch();
+  renderTrophies();
+  renderAwards();
+  renderHistory();
+  renderNews();
+  renderOffers();
+
+  safeText("year", currentYear);
+  safeShow("retirementPanel", player.retired);
+}
+
+function renderProfile() {
+  const country = getCountry(player.nationality);
+
+  safeText("displayNumber", player.number);
+  safeText("displayName", player.name);
+  safeText("displayPosition", POSITION_NAMES[player.position] || player.position);
+  safeText("displayNationality", `${country.flag} ${country.name}`);
+  safeText("displayClub", currentClub.name);
+  safeText("displayAge", player.age);
+  safeText("displayHeight", `${player.height} cm`);
+  safeText("displayFoot", player.foot);
+  safeText("displayOVR", player.ovr);
+  safeText("displayPotential", player.potential);
+
+  safeText("displayValue", formatMoney(player.marketValue));
+  safeText("displaySalary", `${formatMoney(player.salary)}/week`);
+  safeText("displayCash", formatMoney(player.cash));
+  safeText("displayContract", `${player.contractYears} year(s)`);
+}
+
+function renderAttributes() {
+  for (const stat of STAT_NAMES) {
+    const value = player.stats[stat];
+
+    safeText("stat" + stat.toUpperCase(), Math.round(value));
+    safeBar("bar" + stat.toUpperCase(), value);
+  }
+}
+
+function renderCondition() {
+  safeText("displayFitness", `${Math.round(player.fitness)}%`);
+  safeText("displayForm", player.form > 0 ? `+${player.form}` : player.form);
+  safeText("displayMorale", `${Math.round(player.morale)}%`);
+
+  if (player.injuryDays > 0) {
+    safeText("matchResult", `Injured: ${player.injuryDays} days remaining`);
+  }
+}
+
+function renderSeasonStats() {
+  safeText("seasonMatches", player.season.matches);
+  safeText("seasonStarts", player.season.starts);
+  safeText("seasonGoals", player.season.goals);
+  safeText("seasonAssists", player.season.assists);
+  safeText(
+    "seasonRating",
+    player.season.matches
+      ? round(player.season.averageRating, 2)
+      : "—"
+  );
+}
+
+function renderCareerStats() {
+  safeText("careerMatches", player.career.matches);
+  safeText("careerGoals", player.career.goals);
+  safeText("careerAssists", player.career.assists);
+  safeText("internationalCaps", player.appearancesForCountry);
+  safeText("internationalGoals", player.internationalGoals);
+  safeText("trophyCount", player.trophies.length);
+  safeText("awardCount", player.awards.length);
+}
+
+function renderLatestMatch() {
+  if (!lastMatch) {
+    safeText("matchPerformance", "Play your first match to see your performance.");
+    return;
+  }
+
+  const match = lastMatch;
+  safeText(
+    "matchResult",
+    `${match.homeName} ${match.homeGoals}–${match.awayGoals} ${match.awayName}`
+  );
+
+  safeText(
+    "matchPerformance",
+    match.minutes > 0
+      ? `${match.minutes} minutes | ${match.goals} goals | ${match.assists} assists | Rating ${match.rating}`
+      : "You did not play in this match."
+  );
+}
+
+function renderTrophies() {
+  const element = $("trophies");
+  if (!element) return;
+
+  if (!player.trophies.length) {
+    element.textContent = "No trophies yet. Keep working!";
+    return;
+  }
+
+  element.innerHTML = player.trophies
+    .slice()
+    .reverse()
+    .map(trophy =>
+      `<div class="list-item">
+        🏆 <strong>${escapeHTML(trophy.name)}</strong>
+        <span>${escapeHTML(trophy.year)}</span>
+        <small>${escapeHTML(trophy.club)}</small>
+      </div>`
+    )
+    .join("");
+}
+
+function renderAwards() {
+  const element = $("awards");
+  if (!element) return;
+
+  if (!player.awards.length) {
+    element.textContent = "No individual awards yet.";
+    return;
+  }
+
+  element.innerHTML = player.awards
+    .slice()
+    .reverse()
+    .map(award =>
+      `<div class="list-item">
+        🥇 <strong>${escapeHTML(award.name)}</strong>
+        <span>${escapeHTML(award.year)}</span>
+      </div>`
+    )
+    .join("");
+}
+
+function renderHistory() {
+  const element = $("history");
+  if (!element) return;
+
+  if (!player.clubHistory.length) {
+    element.textContent = "Your club history will appear here.";
+    return;
+  }
+
+  element.innerHTML = player.clubHistory
+    .slice()
+    .reverse()
+    .map(item =>
+      `<div class="list-item">
+        <strong>${escapeHTML(item.club)}</strong>
+        <span>${escapeHTML(item.startYear)}–${escapeHTML(item.endYear || "Present")}</span>
+        <small>${item.appearances} appearances · ${item.goals} goals · ${item.assists} assists</small>
+      </div>`
+    )
+    .join("");
+}
+
+function renderNews() {
+  const element = $("news");
+  if (!element) return;
+
+  if (!player.news.length) {
+    element.textContent = "No news yet.";
+    return;
+  }
+
+  element.innerHTML = player.news
+    .slice(0, 15)
+    .map(item =>
+      `<div class="news-item">
+        <small>${escapeHTML(item.year)}</small>
+        ${escapeHTML(item.message)}
+      </div>`
+    )
+    .join("");
+}
+
+function renderOffers() {
+  const element = $("offers");
+  if (!element) return;
+
+  if (!offerList.length) {
+    element.textContent = "No transfer offers available right now.";
+    return;
+  }
+
+  element.innerHTML = offerList.map((offer, index) => `
+    <div class="offer-card">
+      <strong>${escapeHTML(offer.club.name)}</strong>
+      <p>Club OVR: ${offer.club.rating}</p>
+      <p>Transfer fee: ${formatMoney(offer.fee)}</p>
+      <p>Weekly wage: ${formatMoney(offer.salary)}</p>
+      <p>Contract: ${offer.contractYears} years</p>
+      <button type="button" data-transfer-index="${index}">
+        Accept transfer
+      </button>
+    </div>
+  `).join("");
+
+  element.querySelectorAll("[data-transfer-index]").forEach(button => {
+    button.addEventListener("click", () => {
+      acceptTransfer(Number(button.dataset.transferIndex));
+    });
+  });
+}
+
+/* ---------------------------------------------------------
+   SAVE AND LOAD
+   --------------------------------------------------------- */
+
+function saveCareer(showMessage = true) {
+  if (!player || !currentClub) {
+    if (showMessage) notify("There is no career to save.");
+    return;
+  }
+
+  const saveData = {
+    version: GAME_VERSION,
+    currentYear,
+    currentSeason,
+    seasonFinished,
+    player,
+    currentClubName: currentClub.name,
+    lastMatch,
+    offerList: offerList.map(offer => ({
+      clubName: offer.club.name,
+      fee: offer.fee,
+      salary: offer.salary,
+      contractYears: offer.contractYears
+    }))
+  };
+
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
+    if (showMessage) notify("Career saved successfully!");
+  } catch (error) {
+    console.error("Save failed:", error);
+    if (showMessage) {
+      notify("Save failed. Your browser may be blocking local storage.");
+    }
+  }
+}
+
+function loadCareer() {
+  let raw;
+
+  try {
+    raw = localStorage.getItem(SAVE_KEY);
+  } catch (error) {
+    notify("Your browser would not allow the saved career to be read.");
+    return;
+  }
+
+  if (!raw) {
+    notify("No saved career found in this browser.");
+    return;
+  }
+
+  try {
+    const data = JSON.parse(raw);
+
+    if (!data.player || !data.currentClubName) {
+      throw new Error("Invalid save data");
+    }
+
+    currentYear = Number(data.currentYear) || new Date().getFullYear();
+    currentSeason = Number(data.currentSeason) || currentYear;
+    seasonFinished = Boolean(data.seasonFinished);
+    player = data.player;
+    currentClub = CLUBS.find(
+      club => club.name === data.currentClubName
+    );
+
+    if (!currentClub) throw new Error("Saved club not found");
+
+    // Fill missing fields if loading an older save.
+    player.stats ||= readCustomStats();
+    player.season ||= createEmptyStats();
+    player.career ||= createEmptyStats();
+    player.trophies ||= [];
+    player.awards ||= [];
+    player.clubHistory ||= [];
+    player.news ||= [];
+    player.matchHistory ||= [];
+    player.seasonTrophies ||= [];
+    player.age = clamp(Number(player.age) || 18, 15, 45);
+    player.position = normalisePosition(player.position);
+    player.ovr = calculateOVR(player.stats, player.position);
+
+    lastMatch = data.lastMatch || null;
+
+    offerList = (data.offerList || [])
+      .map(savedOffer => {
+        const club = CLUBS.find(
+          item => item.name === savedOffer.clubName
+        );
+
+        return club ? {
+          club,
+          fee: savedOffer.fee,
+          salary: savedOffer.salary,
+          contractYears: savedOffer.contractYears
+        } : null;
+      })
+      .filter(Boolean);
+
+    retirement = Boolean(player.retired);
+
+    safeShow("createScreen", false);
+    safeShow("careerScreen", true);
+
+    renderAll();
+    notify("Career loaded successfully!");
+  } catch (error) {
+    console.error("Load failed:", error);
+    notify("That save could not be loaded. It may be damaged or outdated.");
+  }
+}
+
+/* ---------------------------------------------------------
+   OPTIONAL GLOBAL FUNCTIONS
+
+   These allow additional HTML buttons to call functions
+   using onclick="functionName()".
+   --------------------------------------------------------- */
+
+window.playMatch = playMatch;
+window.trainPlayer = trainPlayer;
+window.restPlayer = restPlayer;
+window.advanceSeason = advanceSeason;
+window.saveCareer = saveCareer;
+window.loadCareer = loadCareer;
+window.acceptTransfer = acceptTransfer;
+window.updateCustomStatPreview = updateCustomStatPreview;
+
+/* ---------------------------------------------------------
+   START
+   --------------------------------------------------------- */
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initGame, { once: true });
+} else {
+  initGame();
+}
