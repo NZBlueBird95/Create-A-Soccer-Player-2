@@ -1,0 +1,477 @@
+<div class="app-shell">
+  <!-- HEADER -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">FC</div>
+      <div>
+        <h1>FOOTBALL CAREER</h1>
+        <p>PRO CAREER SIMULATOR</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="live-indicator"></span>
+      <span>CAREER MODE</span>
+      <span class="season-badge" id="year">2026</span>
+    </div>
+  </header>
+
+  <!-- CREATE PLAYER SCREEN -->
+  <main>
+    <section id="createScreen" class="screen create-screen">
+      <div class="hero-banner">
+        <div class="hero-content">
+          <p class="eyebrow">YOUR JOURNEY STARTS HERE</p>
+          <h2>Build your<br><span>football legacy.</span></h2>
+          <p>Create your player, customise your attributes and begin a professional career.</p>
+          <div class="hero-tags">
+            <span>PLAYER DEVELOPMENT</span>
+            <span>CLUB CAREER</span>
+            <span>INTERNATIONAL FOOTBALL</span>
+          </div>
+        </div>
+        <div class="hero-decoration" aria-hidden="true">⚽</div>
+      </div>
+
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">PLAYER REGISTRATION</p>
+          <h2>Create your footballer</h2>
+        </div>
+        <span class="muted">CUSTOM PLAYER</span>
+      </div>
+
+      <div class="creation-grid">
+        <section class="panel">
+          <div class="panel-heading">
+            <h3>Personal information</h3>
+            <span class="panel-number">01</span>
+          </div>
+
+          <div class="form-grid">
+            <label class="field field-wide">
+              <span>Player name</span>
+              <input id="name" type="text" maxlength="30"
+                placeholder="Enter your player's name" value="New Player">
+            </label>
+
+            <label class="field">
+              <span>Nationality</span>
+              <select id="nationality">
+                <option value="New Zealand">🇳🇿 New Zealand</option>
+                <option value="Brazil">🇧🇷 Brazil</option>
+                <option value="Portugal">🇵🇹 Portugal</option>
+                <option value="Argentina">🇦🇷 Argentina</option>
+                <option value="France">🇫🇷 France</option>
+                <option value="Spain">🇪🇸 Spain</option>
+                <option value="England">🏴 England</option>
+                <option value="Germany">🇩🇪 Germany</option>
+                <option value="Italy">🇮🇹 Italy</option>
+                <option value="Netherlands">🇳🇱 Netherlands</option>
+                <option value="Uruguay">🇺🇾 Uruguay</option>
+                <option value="Croatia">🇭🇷 Croatia</option>
+                <option value="Nigeria">🇳🇬 Nigeria</option>
+                <option value="Japan">🇯🇵 Japan</option>
+                <option value="South Korea">🇰🇷 South Korea</option>
+                <option value="United States">🇺🇸 United States</option>
+                <option value="Mexico">🇲🇽 Mexico</option>
+                <option value="Australia">🇦🇺 Australia</option>
+                <option value="Morocco">🇲🇦 Morocco</option>
+                <option value="Other">🌍 Other</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Position</span>
+              <select id="position">
+                <option value="LW">Left winger (LW)</option>
+                <option value="RW">Right winger (RW)</option>
+                <option value="ST">Striker (ST)</option>
+                <option value="CAM">Attacking midfielder (CAM)</option>
+                <option value="CM">Central midfielder (CM)</option>
+                <option value="CDM">Defensive midfielder (CDM)</option>
+                <option value="LB">Left back (LB)</option>
+                <option value="RB">Right back (RB)</option>
+                <option value="CB">Centre back (CB)</option>
+                <option value="GK">Goalkeeper (GK)</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Preferred foot</span>
+              <select id="foot">
+                <option value="Right">Right</option>
+                <option value="Left">Left</option>
+                <option value="Both">Both</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Shirt number</span>
+              <input id="number" type="number" min="1" max="99" value="10">
+            </label>
+
+            <label class="field">
+              <span>Starting age</span>
+              <div class="range-heading">
+                <span>Age</span>
+                <strong id="ageValue">18</strong>
+              </div>
+              <input id="age" type="range" min="15" max="40" value="18">
+              <div class="range-labels">
+                <span>15 years</span><span>40 years</span>
+              </div>
+            </label>
+
+            <label class="field">
+              <span>Height (cm)</span>
+              <input id="height" type="number" min="140" max="220" value="180">
+            </label>
+          </div>
+        </section>
+
+        <section class="panel stats-editor">
+          <div class="panel-heading">
+            <div>
+              <h3>Custom attributes</h3>
+              <p class="muted">Set your own starting stats.</p>
+            </div>
+            <span class="panel-number">02</span>
+          </div>
+
+          <div class="custom-stats">
+            <label class="stat-editor-row">
+              <span class="stat-icon">⚡</span>
+              <span class="stat-editor-name">Pace <small>PAC</small></span>
+              <input id="pacInput" type="range" min="1" max="99" value="85">
+              <output id="pacValue">85</output>
+            </label>
+
+            <label class="stat-editor-row">
+              <span class="stat-icon">🎯</span>
+              <span class="stat-editor-name">Shooting <small>SHO</small></span>
+              <input id="shoInput" type="range" min="1" max="99" value="80">
+              <output id="shoValue">80</output>
+            </label>
+
+            <label class="stat-editor-row">
+              <span class="stat-icon">🧠</span>
+              <span class="stat-editor-name">Passing <small>PAS</small></span>
+              <input id="pasInput" type="range" min="1" max="99" value="78">
+              <output id="pasValue">78</output>
+            </label>
+
+            <label class="stat-editor-row">
+              <span class="stat-icon">✨</span>
+              <span class="stat-editor-name">Dribbling <small>DRI</small></span>
+              <input id="driInput" type="range" min="1" max="99" value="86">
+              <output id="driValue">86</output>
+            </label>
+
+            <label class="stat-editor-row">
+              <span class="stat-icon">🛡️</span>
+              <span class="stat-editor-name">Defending <small>DEF</small></span>
+              <input id="defInput" type="range" min="1" max="99" value="45">
+              <output id="defValue">45</output>
+            </label>
+
+            <label class="stat-editor-row">
+              <span class="stat-icon">💪</span>
+              <span class="stat-editor-name">Physical <small>PHY</small></span>
+              <input id="phyInput" type="range" min="1" max="99" value="75">
+              <output id="phyValue">75</output>
+            </label>
+          </div>
+
+          <div class="ovr-preview">
+            <div>
+              <span class="muted">PROJECTED RATING</span>
+              <p>Position-based overall</p>
+            </div>
+            <strong id="previewOVR">80</strong>
+            <span class="ovr-label">OVR</span>
+          </div>
+
+          <button id="createBtn" class="btn btn-primary btn-large" type="button">
+            Start my career <span>→</span>
+          </button>
+          <p class="form-note">Your career will evolve through matches, training, form and age.</p>
+        </section>
+      </div>
+    </section>
+
+    <!-- CAREER SCREEN -->
+    <section id="careerScreen" class="screen career-screen" hidden>
+      <div class="career-heading">
+        <div>
+          <p class="eyebrow">PROFESSIONAL CAREER</p>
+          <h2>Career dashboard</h2>
+        </div>
+        <div class="career-actions">
+          <button id="saveBtn" class="btn btn-secondary" type="button">Save career</button>
+          <button id="loadBtn" class="btn btn-secondary" type="button">Load career</button>
+        </div>
+      </div>
+
+      <!-- PLAYER PROFILE -->
+      <section class="panel player-profile">
+        <div class="player-card-top">
+          <div class="player-number-block">
+            <span class="muted">PLAYER</span>
+            <strong id="displayNumber">10</strong>
+          </div>
+          <div class="player-identity">
+            <p id="displayPosition" class="eyebrow">LEFT WINGER</p>
+            <h2 id="displayName">New Player</h2>
+            <p id="displayNationality">🇳🇿 New Zealand</p>
+          </div>
+          <div class="player-ovr">
+            <span>OVR</span>
+            <strong id="displayOVR">80</strong>
+            <small id="displayPotential">POT 90</small>
+          </div>
+        </div>
+
+        <div class="profile-divider"></div>
+
+        <div class="profile-details">
+          <div class="detail-item">
+            <span>Current club</span>
+            <strong id="displayClub">Free Agent</strong>
+          </div>
+          <div class="detail-item">
+            <span>Age</span>
+            <strong id="displayAge">18</strong>
+          </div>
+          <div class="detail-item">
+            <span>Height</span>
+            <strong id="displayHeight">180 cm</strong>
+          </div>
+          <div class="detail-item">
+            <span>Preferred foot</span>
+            <strong id="displayFoot">Right</strong>
+          </div>
+        </div>
+      </section>
+
+      <!-- ATTRIBUTES -->
+      <div class="dashboard-grid">
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">PLAYER RATINGS</p>
+              <h3>Attributes</h3>
+            </div>
+            <span class="muted">OUT OF 99</span>
+          </div>
+
+          <div class="attribute-list">
+            <div class="attribute-row">
+              <span>PAC</span><div class="attribute-track"><div id="barPAC" class="attribute-fill" style="width:85%"></div></div><strong id="statPAC">85</strong>
+            </div>
+            <div class="attribute-row">
+              <span>SHO</span><div class="attribute-track"><div id="barSHO" class="attribute-fill" style="width:80%"></div></div><strong id="statSHO">80</strong>
+            </div>
+            <div class="attribute-row">
+              <span>PAS</span><div class="attribute-track"><div id="barPAS" class="attribute-fill" style="width:78%"></div></div><strong id="statPAS">78</strong>
+            </div>
+            <div class="attribute-row">
+              <span>DRI</span><div class="attribute-track"><div id="barDRI" class="attribute-fill" style="width:86%"></div></div><strong id="statDRI">86</strong>
+            </div>
+            <div class="attribute-row">
+              <span>DEF</span><div class="attribute-track"><div id="barDEF" class="attribute-fill" style="width:45%"></div></div><strong id="statDEF">45</strong>
+            </div>
+            <div class="attribute-row">
+              <span>PHY</span><div class="attribute-track"><div id="barPHY" class="attribute-fill" style="width:75%"></div></div><strong id="statPHY">75</strong>
+            </div>
+          </div>
+        </section>
+
+        <!-- CONDITION -->
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">PLAYER STATUS</p>
+              <h3>Condition & contract</h3>
+            </div>
+          </div>
+
+          <div class="condition-grid">
+            <div class="condition-card">
+              <span>Fitness</span>
+              <strong id="displayFitness">100%</strong>
+              <small>Physical condition</small>
+            </div>
+            <div class="condition-card">
+              <span>Form</span>
+              <strong id="displayForm">7.0</strong>
+              <small>Recent performances</small>
+            </div>
+            <div class="condition-card">
+              <span>Morale</span>
+              <strong id="displayMorale">75</strong>
+              <small>Player happiness</small>
+            </div>
+            <div class="condition-card">
+              <span>Market value</span>
+              <strong id="displayValue">€1M</strong>
+              <small>Estimated transfer value</small>
+            </div>
+          </div>
+
+          <div class="contract-details">
+            <div><span>Weekly salary</span><strong id="displaySalary">€5,000</strong></div>
+            <div><span>Personal balance</span><strong id="displayCash">€0</strong></div>
+            <div><span>Contract</span><strong id="displayContract">3 years</strong></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- MATCH CENTRE -->
+      <section class="panel match-centre">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">NEXT FIXTURE</p>
+            <h3>Match centre</h3>
+          </div>
+          <span class="status-pill">CAREER MATCH</span>
+        </div>
+
+        <div class="match-scoreboard">
+          <div class="score-team">
+            <div class="team-crest">FC</div>
+            <strong id="matchMyClub">Your club</strong>
+            <small>HOME</small>
+          </div>
+          <div class="score-middle">
+            <span>RESULT</span>
+            <strong id="matchResult">VS</strong>
+            <small id="matchPerformance">Play your next match</small>
+          </div>
+          <div class="score-team">
+            <div class="team-crest opponent-crest">OP</div>
+            <strong id="matchOpponent">Opponent</strong>
+            <small>AWAY</small>
+          </div>
+        </div>
+
+        <div class="match-actions">
+          <button id="playMatchBtn" class="btn btn-primary" type="button">Play match</button>
+          <button id="trainBtn" class="btn btn-secondary" type="button">Train</button>
+          <button id="restBtn" class="btn btn-secondary" type="button">Rest</button>
+          <button id="nextSeasonBtn" class="btn btn-secondary" type="button">Advance season →</button>
+        </div>
+        <p class="form-note">Matches affect your statistics, fitness, form, reputation and career progress.</p>
+      </section>
+
+      <!-- SEASON STATISTICS -->
+      <section class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">CURRENT SEASON</p>
+            <h3>Season statistics</h3>
+          </div>
+          <span id="seasonLabel" class="muted">2026 / 27</span>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-box"><span>Matches</span><strong id="seasonMatches">0</strong></div>
+          <div class="stat-box"><span>Starts</span><strong id="seasonStarts">0</strong></div>
+          <div class="stat-box"><span>Goals</span><strong id="seasonGoals">0</strong></div>
+          <div class="stat-box"><span>Assists</span><strong id="seasonAssists">0</strong></div>
+          <div class="stat-box"><span>Average rating</span><strong id="seasonRating">—</strong></div>
+        </div>
+      </section>
+
+      <!-- CAREER RECORDS -->
+      <section class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">CAREER RECORDS</p>
+            <h3>Career statistics</h3>
+          </div>
+        </div>
+
+        <div class="stats-grid career-records">
+          <div class="stat-box"><span>Career matches</span><strong id="careerMatches">0</strong></div>
+          <div class="stat-box"><span>Career goals</span><strong id="careerGoals">0</strong></div>
+          <div class="stat-box"><span>Career assists</span><strong id="careerAssists">0</strong></div>
+          <div class="stat-box"><span>International caps</span><strong id="internationalCaps">0</strong></div>
+          <div class="stat-box"><span>International goals</span><strong id="internationalGoals">0</strong></div>
+          <div class="stat-box"><span>Trophies</span><strong id="trophyCount">0</strong></div>
+          <div class="stat-box"><span>Awards</span><strong id="awardCount">0</strong></div>
+        </div>
+      </section>
+
+      <!-- TRANSFERS -->
+      <section class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">TRANSFER MARKET</p>
+            <h3>Club offers</h3>
+          </div>
+          <span class="muted">CAREER OPPORTUNITIES</span>
+        </div>
+        <div id="offers" class="item-list">
+          <p class="empty-state">Transfer offers will appear here as your career progresses.</p>
+        </div>
+      </section>
+
+      <!-- TROPHIES & AWARDS -->
+      <div class="dashboard-grid">
+        <section class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">HONOURS</p><h3>Trophy cabinet</h3></div>
+          </div>
+          <div id="trophies" class="item-list">
+            <p class="empty-state">Your trophies will appear here.</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">INDIVIDUAL SUCCESS</p><h3>Player awards</h3></div>
+          </div>
+          <div id="awards" class="item-list">
+            <p class="empty-state">Your individual awards will appear here.</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- HISTORY & NEWS -->
+      <div class="dashboard-grid">
+        <section class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">YOUR JOURNEY</p><h3>Career history</h3></div>
+          </div>
+          <div id="history" class="item-list">
+            <p class="empty-state">Your career history will appear here.</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">LATEST UPDATES</p><h3>Football news</h3></div>
+          </div>
+          <div id="news" class="item-list">
+            <p class="empty-state">Career news will appear here.</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- RETIREMENT -->
+      <section id="retirementPanel" class="panel retirement-panel" hidden>
+        <p class="eyebrow">END OF PROFESSIONAL CAREER</p>
+        <h2>Full-time whistle.</h2>
+        <p>Your playing career has ended. Review your records, honours and legacy.</p>
+        <div id="retirementSummary"></div>
+        <button id="restartCareerBtn" class="btn btn-primary" type="button">Create a new career</button>
+      </section>
+
+      <footer class="app-footer">
+        <span>FOOTBALL CAREER SIMULATOR</span>
+        <span>Build your legacy, one season at a time.</span>
+      </footer>
+    </section>
+  </main>
+</div>
+
